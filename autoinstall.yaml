@@ -6,8 +6,7 @@ autoinstall:
   identity:
     realname: 'DTC Kiosk'
     username: dtc
-    password: $6$zcnDywHzVuRFzxos$1aqQhPri5nyQ1vKEXj0tXyeDbGgdL.wEZIO1pxI/jO.J9jOl9KSrYpfAXpECejPXebOkfgzBr0syzjU4iJAhx0
-    hostname: kiosk-tmp
+    password: $6$mJVWCXDJYH8f03WX$y5XLG2q46N.u0taZzgHX503oByrTQmmH9A3qWQMCytHgZtIjsfFxwewCjqcJv7lj86bfbspMndMzd76jpttQE.
   ssh:
     install-server: yes
     allow-password-authentication: yes
