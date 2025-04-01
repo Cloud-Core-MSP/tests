@@ -1,0 +1,118 @@
+#cloud-config
+autoinstall:
+  version: 1
+  source:
+    id: ubuntu-server-minimal
+  identity:
+    realname: 'DTC Kiosk'
+    username: dtc
+    password: $6$zcnDywHzVuRFzxos$1aqQhPri5nyQ1vKEXj0tXyeDbGgdL.wEZIO1pxI/jO.J9jOl9KSrYpfAXpECejPXebOkfgzBr0syzjU4iJAhx0
+    hostname: kiosk-tmp
+  ssh:
+    install-server: yes
+    allow-password-authentication: yes
+  network:
+    version: 2
+    ethernets:
+      ens18:
+        dhcp4: true
+  storage:
+    layout:
+      name: lvm
+    wipe: true
+  keyboard:
+    layout: us
+  timezone: America/New_York
+  packages:
+    - xorg
+    - openbox
+    - network-manager
+    - curl
+    - snapd
+  snaps:
+    - name: chromium
+  user-data:
+    users:
+    - name: kiosk
+      gecos: 'kiosk'
+      passwd: $6$duk4Ghq9jd/VNQsP$aTkS.eciy3xioGbVIKWoYgZzQDzqxa8QWm3Rxl3sEKr/2ClMLT0RDITnS6fFnE.mIa9/rn0PTbycQ5NmG9hPy0
+      sudo: ALL=(ALL) NOPASSWD:ALL
+    write_files:
+      - path: /home/kiosk/.first_login.sh
+        content: |
+          #!/bin/bash
+
+          KIOSK_USER="kiosk"
+          AUTOLOGIN_SERVICE="/etc/systemd/system/getty@tty1.service.d/override.conf"
+          CHROMIUM_CMD="chromium"
+          CHROMIUM_FLAGS="--kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-features=TranslateUI"
+          VM_DISPLAY_RESOLUTION="1920x1080"
+
+          # Ask user to choose between PCC and MatrixCare
+          echo "Choose your kiosk platform:"
+          echo "1) PCC"
+          echo "2) MatrixCare"
+          read -p "Enter your choice (1 or 2): " PLATFORM_CHOICE
+
+          if [ "$PLATFORM_CHOICE" == "1" ]; then
+              KIOSK_URL="https://login.pointclickcare.com/home/userLogin.xhtml"
+          elif [ "$PLATFORM_CHOICE" == "2" ]; then
+              read -p "Enter the MatrixCare login URL: " KIOSK_URL
+          else
+              KIOSK_URL="https://login.pointclickcare.com/home/userLogin.xhtml"
+              exit 1
+          fi
+
+          # Set up auto-login for the kiosk user
+          sudo mkdir -p $(dirname $AUTOLOGIN_SERVICE)
+          sudo tee $AUTOLOGIN_SERVICE <<EOF
+          [Service]
+          ExecStart=
+          ExecStart=-/sbin/agetty --autologin $KIOSK_USER --noclear %I \$TERM
+          EOF
+
+          # Configure Openbox for the kiosk user
+          sudo mkdir -p /home/$KIOSK_USER/.config/openbox
+          if [ $? -ne 0 ]; then
+              echo "Error creating /home/$KIOSK_USER/.config/openbox directory"
+              exit 1
+          fi
+          sudo tee /home/$KIOSK_USER/.config/openbox/autostart <<< "/snap/bin/$CHROMIUM_CMD $CHROMIUM_FLAGS $KIOSK_URL"
+          sudo chown -R $KIOSK_USER:$KIOSK_USER /home/$KIOSK_USER/.config
+
+          # Disable screen blanking and power management
+          sudo tee -a /home/kiosk/.config/openbox/autostart <<< "xset s off
+          xset -dpms
+          xset s noblank"
+
+          # Optionally set display resolution (uncomment to apply resolution setting)
+          # sudo tee -a /home/kiosk/.config/openbox/autostart <<< "xrandr --output <DISPLAY_OUTPUT> --mode $VM_DISPLAY_RESOLUTION"
+
+          # Set Openbox as the default session for the kiosk user
+          sudo tee /home/kiosk/.xinitrc <<< "exec openbox-session"
+          sudo chown kiosk:kiosk /home/kiosk/.xinitrc
+
+          # Enable automatic start of X server on login
+          sudo tee -a /home/kiosk/.profile <<< "[[ -z \$DISPLAY && \$XDG_VTNR -eq 1 ]] && startx"
+
+          # Reboot to apply changes
+          systemctl --no-block reboot
+        permissions: '0755'
+      - path: /etc/systemd/system/delete-first-login.service
+        content: |
+          [Unit]
+          Description=Delete first login script
+          After=multi-user.target
+
+          [Service]
+          Type=oneshot
+          ExecStart=/bin/rm /home/kiosk/.first_login.sh
+
+          [Install]
+          WantedBy=multi-user.target
+        permissions: '0644'
+    runcmd:
+      - [ systemctl, enable, delete-first-login.service ]
+      - [ bash, "/home/kiosk/.profile" ]
+  updates: all
+  shutdown: reboot
